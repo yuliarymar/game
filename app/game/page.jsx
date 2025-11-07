@@ -168,7 +168,7 @@ export default function Game() {
       }
     };
   }, []);
-
+я
   const playerCount = users.filter(u => u.role === "player").length;
   const maxPlayers = 10;
 
