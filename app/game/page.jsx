@@ -1,20 +1,20 @@
 // app/game/page.jsx
 "use client";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Suspense } from "react";
 import { io } from "socket.io-client";
 
-export default function Game() {
-  const p = useSearchParams();
-  const name = p.get("name");
-  const room = p.get("room");
-  const role = p.get("role");
+function GameContent() {
+  const searchParams = useSearchParams();
+  const name = searchParams.get("name");
+  const room = searchParams.get("room");
+  const role = searchParams.get("role");
 
   const [users, setUsers] = useState([]);
   const [chat, setChat] = useState([]);
   const [text, setText] = useState("");
   const [showScenario, setShowScenario] = useState(true);
-  const [gameStage, setGameStage] = useState("intro"); // intro → discussion → voting
+  const [gameStage, setGameStage] = useState("intro");
   const [isHost, setIsHost] = useState(false);
   const [assignedRoles, setAssignedRoles] = useState({});
   const [userRole, setUserRole] = useState("");
@@ -22,30 +22,18 @@ export default function Game() {
   const [userVote, setUserVote] = useState("");
   const [voteResults, setVoteResults] = useState(null);
   
-  const socketRef = useRef(null);
-  const chatContainerRef = useRef(null);
-
-  const gameRoles = [
-    "Директор школи",
-    "Підліток-художник",
-    "Поліцейський",
-    "Вчитель мистецтв",
-    "Батько учня",
-    "Представник громади",
-    "Психолог",
-    "Журналіст"
-  ];
+  const socketReference = useRef(null);
+  const chatContainerReference = useRef(null);
 
   const handleRoomUpdate = useCallback((data) => {
     setUsers([...data.players, ...data.specs]);
-    // Перший гравець стає ведучим
     if (data.players.length > 0 && data.players[0].name === name) {
       setIsHost(true);
     }
   }, [name]);
 
   const handleMessage = useCallback((message) => {
-    setChat(prevChat => [...prevChat, message]);
+    setChat(previousChat => [...previousChat, message]);
   }, []);
 
   const handleGameUpdate = useCallback((data) => {
@@ -62,11 +50,11 @@ export default function Game() {
   }, [name]);
 
   useEffect(() => {
-    if (!socketRef.current) {
-      socketRef.current = io("", { path: "/api/socket" });
+    if (!socketReference.current) {
+      socketReference.current = io("", { path: "/api/socket" });
     }
 
-    const socket = socketRef.current;
+    const socket = socketReference.current;
     
     socket.emit("join", { roomId: room, name, role });
     socket.on("room", handleRoomUpdate);
@@ -83,53 +71,62 @@ export default function Game() {
   }, [room, name, role, handleRoomUpdate, handleMessage, handleGameUpdate, handleRoleAssignment]);
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    if (chatContainerReference.current) {
+      chatContainerReference.current.scrollTop = chatContainerReference.current.scrollHeight;
     }
   }, [chat]);
 
   const sendMessage = useCallback(() => {
-    if (text.trim() && socketRef.current) {
-      socketRef.current.emit("msg", { roomId: room, text, name });
+    if (text.trim() && socketReference.current) {
+      socketReference.current.emit("msg", { roomId: room, text, name });
       setText("");
     }
   }, [text, room, name]);
 
-  const handleKeyPress = useCallback((e) => {
-    if (e.key === "Enter") {
+  const handleKeyPress = useCallback((event) => {
+    if (event.key === "Enter") {
       sendMessage();
     }
   }, [sendMessage]);
 
-  // Функції для ведучого
   const assignRoles = useCallback(() => {
-    if (socketRef.current && isHost) {
-      socketRef.current.emit("assignRoles", { roomId: room });
+    if (socketReference.current && isHost) {
+      const gameRoles = [
+        "Директор школи",
+        "Підліток-художник",
+        "Поліцейський",
+        "Вчитель мистецтв",
+        "Батько учня",
+        "Представник громади",
+        "Психолог",
+        "Журналіст"
+      ];
+      socketReference.current.emit("assignRoles", { roomId: room, gameRoles });
     }
   }, [room, isHost]);
 
   const startDiscussion = useCallback(() => {
-    if (socketRef.current && isHost) {
-      socketRef.current.emit("changeStage", { roomId: room, stage: "discussion" });
+    if (socketReference.current && isHost) {
+      socketReference.current.emit("changeStage", { roomId: room, stage: "discussion" });
     }
   }, [room, isHost]);
 
   const startVoting = useCallback(() => {
-    if (socketRef.current && isHost) {
+    if (socketReference.current && isHost) {
       const options = [
         "Покарати винних",
         "Організувати легальний стіт-арт",
         "Провести переговори",
         "Інше рішення"
       ];
-      socketRef.current.emit("startVoting", { roomId: room, options });
-      socketRef.current.emit("changeStage", { roomId: room, stage: "voting" });
+      socketReference.current.emit("startVoting", { roomId: room, options });
+      socketReference.current.emit("changeStage", { roomId: room, stage: "voting" });
     }
   }, [room, isHost]);
 
   const submitVote = useCallback((option) => {
-    if (socketRef.current && role === "player") {
-      socketRef.current.emit("submitVote", { roomId: room, vote: option });
+    if (socketReference.current && role === "player") {
+      socketReference.current.emit("submitVote", { roomId: room, vote: option });
       setUserVote(option);
     }
   }, [room, role]);
@@ -137,10 +134,6 @@ export default function Game() {
   const getRoleBadgeColor = useCallback((userRole) => {
     return userRole === "player" ? "bg-green-500" : "bg-purple-500";
   }, []);
-
-  const getCurrentUserRoleColor = useCallback(() => {
-    return role === "player" ? "text-green-600" : "text-purple-600";
-  }, [role]);
 
   const getStageColor = useCallback((stage) => {
     switch(stage) {
@@ -162,19 +155,15 @@ export default function Game() {
 
   useEffect(() => {
     return () => {
-      if (socketRef.current) {
-        socketRef.current.close();
-        socketRef.current = null;
+      if (socketReference.current) {
+        socketReference.current.close();
+        socketReference.current = null;
       }
     };
   }, []);
-я
-  const playerCount = users.filter(u => u.role === "player").length;
-  const maxPlayers = 10;
 
   return (
     <div className="min-h-screen bg-linear-to-br from-blue-900 to-purple-900 text-white p-4">
-      {/* Scenario Modal */}
       {showScenario && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-2xl p-6 max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -227,7 +216,6 @@ export default function Game() {
       )}
 
       <div className="max-w-6xl mx-auto">
-        {/* Game Stage Header */}
         <div className="bg-black/40 backdrop-blur-sm rounded-xl p-4 mb-6 border border-white/10">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -249,9 +237,7 @@ export default function Game() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Panel - Participants & Controls */}
           <div className="lg:col-span-1 space-y-6">
-            {/* Participants Panel */}
             <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl">
               <div className="flex items-center mb-4">
                 <div className="w-3 h-3 bg-green-400 rounded-full mr-2 animate-pulse"></div>
@@ -291,7 +277,6 @@ export default function Game() {
               </div>
             </div>
 
-            {/* Game Controls */}
             {isHost && (
               <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl">
                 <h3 className="text-lg font-bold mb-4 flex items-center">
@@ -329,7 +314,6 @@ export default function Game() {
               </div>
             )}
 
-            {/* User Role Info */}
             {userRole && (
               <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl">
                 <h3 className="text-lg font-bold mb-2 flex items-center">
@@ -345,7 +329,6 @@ export default function Game() {
               </div>
             )}
 
-            {/* Voting Panel */}
             {gameStage === "voting" && role === "player" && !userVote && (
               <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl">
                 <h3 className="text-lg font-bold mb-4 flex items-center">
@@ -366,7 +349,6 @@ export default function Game() {
               </div>
             )}
 
-            {/* Vote Results */}
             {voteResults && (
               <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl">
                 <h3 className="text-lg font-bold mb-4 flex items-center">
@@ -395,7 +377,6 @@ export default function Game() {
             )}
           </div>
 
-          {/* Chat Panel */}
           <div className="lg:col-span-2">
             <div className="bg-black/40 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-2xl h-full flex flex-col">
               <h2 className="text-xl font-bold mb-4 flex items-center">
@@ -406,7 +387,7 @@ export default function Game() {
               </h2>
               
               <div 
-                ref={chatContainerRef}
+                ref={chatContainerReference}
                 className="flex-1 overflow-y-auto mb-4 space-y-3 p-2 bg-black/20 rounded-lg max-h-96"
               >
                 {chat.length === 0 ? (
@@ -451,7 +432,7 @@ export default function Game() {
                 <input
                   className="flex-1 bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                   value={text}
-                  onChange={e => setText(e.target.value)}
+                  onChange={event => setText(event.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder={
                     gameStage === "intro" ? "Задайте питання або висловіть думку..." :
@@ -501,5 +482,20 @@ export default function Game() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function Game() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-linear-to-br from-blue-900 to-purple-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Завантаження гри...</p>
+        </div>
+      </div>
+    }>
+      <GameContent />
+    </Suspense>
   );
 }
